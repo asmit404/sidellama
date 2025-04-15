@@ -60,6 +60,15 @@ var OllamaView = class extends import_obsidian.ItemView {
     const textArea = inputDiv.createEl("textarea", {
       attr: { rows: "4", placeholder: "Type your message here..." }
     });
+    textArea.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        sendButton.click();
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendButton.click();
+      }
+    });
     const buttonDiv = inputDiv.createDiv({ cls: "ollama-buttons" });
     const sendButton = buttonDiv.createEl("button", { text: "Ask" });
     const clearButton = buttonDiv.createEl("button", { text: "Clear Chat" });
@@ -68,10 +77,6 @@ var OllamaView = class extends import_obsidian.ItemView {
     addToEditorButton.disabled = true;
     cancelButton.style.display = "none";
     this.responseDiv = chatContainer;
-    clearButton.onclick = () => {
-      this.chatHistory = [];
-      this.responseDiv.empty();
-    };
     cancelButton.onclick = () => {
       if (this.abortController) {
         this.abortController.abort();
@@ -81,10 +86,38 @@ var OllamaView = class extends import_obsidian.ItemView {
         new import_obsidian.Notice("Generation cancelled");
       }
     };
-    const renderMessage = (message) => {
+    const renderMessage = (message, index) => {
       const messageDiv = this.responseDiv.createDiv({ cls: `ollama-message ${message.role}` });
       const roleLabel = messageDiv.createDiv({ cls: "message-role", text: message.role === "user" ? "You" : "Assistant" });
       const contentDiv = messageDiv.createDiv({ cls: "message-content" });
+      const actionDiv = messageDiv.createDiv({ cls: "message-actions" });
+      const copyButton = actionDiv.createEl("button", {
+        cls: "message-action-button",
+        attr: { "aria-label": "Copy message" }
+      });
+      copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+      copyButton.onclick = () => {
+        navigator.clipboard.writeText(message.content).then(() => {
+          new import_obsidian.Notice("Copied to clipboard");
+        }).catch((err) => {
+          console.error("Could not copy text: ", err);
+        });
+      };
+      if (index !== void 0) {
+        const deleteButton = actionDiv.createEl("button", {
+          cls: "message-action-button",
+          attr: { "aria-label": "Delete message" }
+        });
+        deleteButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="delete-icon"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2v2"></path></svg>';
+        deleteButton.onclick = () => {
+          this.chatHistory.splice(index, 1);
+          this.responseDiv.empty();
+          this.chatHistory.forEach((msg, i) => {
+            renderMessage(msg, i);
+          });
+          new import_obsidian.Notice("Message deleted");
+        };
+      }
       import_obsidian.MarkdownRenderer.renderMarkdown(message.content, contentDiv, "", this.plugin);
       this.responseDiv.scrollTo({
         top: this.responseDiv.scrollHeight,
@@ -96,7 +129,7 @@ var OllamaView = class extends import_obsidian.ItemView {
       if (!prompt)
         return;
       this.chatHistory.push({ role: "user", content: prompt });
-      renderMessage(this.chatHistory[this.chatHistory.length - 1]);
+      renderMessage(this.chatHistory[this.chatHistory.length - 1], this.chatHistory.length - 1);
       textArea.value = "";
       addToEditorButton.disabled = true;
       cancelButton.style.display = "inline-block";
@@ -104,15 +137,25 @@ var OllamaView = class extends import_obsidian.ItemView {
       try {
         this.abortController = new AbortController();
         let responseContent = "";
+        let streamingMessageEl = null;
         let contentDiv = null;
         await this.plugin.streamOllama(
           prompt,
           (chunk) => {
             responseContent = chunk;
-            if (!contentDiv) {
-              const messageDiv = this.responseDiv.createDiv({ cls: "ollama-message assistant" });
-              messageDiv.createDiv({ cls: "message-role", text: "Assistant" });
-              contentDiv = messageDiv.createDiv({ cls: "message-content" });
+            if (!streamingMessageEl) {
+              streamingMessageEl = this.responseDiv.createDiv({ cls: "ollama-message assistant" });
+              const roleLabel = streamingMessageEl.createDiv({ cls: "message-role", text: "Assistant" });
+              contentDiv = streamingMessageEl.createDiv({ cls: "message-content" });
+              const actionDiv = streamingMessageEl.createDiv({ cls: "message-actions" });
+              const copyButton = actionDiv.createEl("button", {
+                cls: "message-action-button",
+                attr: { "aria-label": "Copy message" }
+              });
+              copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+              copyButton.onclick = () => {
+                navigator.clipboard.writeText(responseContent).then(() => new import_obsidian.Notice("Copied to clipboard")).catch((err) => console.error("Could not copy text:", err));
+              };
             }
             if (contentDiv) {
               contentDiv.empty();
@@ -129,6 +172,13 @@ var OllamaView = class extends import_obsidian.ItemView {
           this.chatHistory
         );
         this.chatHistory.push({ role: "assistant", content: responseContent });
+        if (streamingMessageEl) {
+          this.responseDiv.removeChild(streamingMessageEl);
+        }
+        renderMessage(
+          { role: "assistant", content: responseContent },
+          this.chatHistory.length - 1
+        );
       } catch (error) {
         if (error.name === "AbortError") {
           renderMessage({ role: "assistant", content: "*Generation cancelled*" });
@@ -140,6 +190,11 @@ var OllamaView = class extends import_obsidian.ItemView {
         sendButton.style.display = "inline-block";
         this.abortController = null;
       }
+    };
+    clearButton.onclick = () => {
+      this.chatHistory = [];
+      this.responseDiv.empty();
+      new import_obsidian.Notice("Chat history cleared");
     };
     addToEditorButton.onclick = async () => {
       let targetLeaf = this.app.workspace.getMostRecentLeaf();
@@ -226,21 +281,29 @@ Assistant:`;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let fullResponse = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done)
-        break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n").filter((line) => line.trim());
-      for (const line of lines) {
-        try {
-          const data = JSON.parse(line);
-          fullResponse += data.response;
-          onChunk(fullResponse);
-        } catch (e) {
-          console.error("Error parsing JSON:", e);
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done)
+          break;
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter((line) => line.trim());
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            fullResponse += data.response;
+            onChunk(fullResponse);
+          } catch (e) {
+            console.error("Error parsing JSON:", e);
+          }
+        }
+        if (signal == null ? void 0 : signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
         }
       }
+    } catch (err) {
+      reader.releaseLock();
+      throw err;
     }
   }
   async loadSettings() {
