@@ -3,7 +3,7 @@
     "name": "SideLlama",
     "version": "1.0.0",
     "minAppVersion": "0.15.0",
-    "description": "Chat with local ML models using Ollama inside Obsidian",
+    "description": "Chat with local ML models using Ollama",
     "author": "asmit404",
     "authorUrl": "https://github.com/asmit404",
     "isDesktopOnly": true,
