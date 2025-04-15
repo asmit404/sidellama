@@ -16,6 +16,7 @@ This plugin is designed to enhance your note-taking experience by integrating AI
 
 - [Obsidian](https://obsidian.md/) v0.15.0 or higher
 - [Ollama](https://ollama.ai/) installed and running locally
+- [gemma3](https://ollama.com/library/gemma3) downloaded and available in your Ollama models
 
 ## Installation
 
@@ -48,9 +49,9 @@ This plugin is designed to enhance your note-taking experience by integrating AI
 
 You can configure the following settings:
 
-- **Model Name**: Choose which Ollama model to use
+- **Model Name**: Choose which Ollama model to use (default: gemma3)
 - **API Endpoint**: Set custom API endpoint (default: <http://localhost:11434>)
-- **Temperature**: Adjust response randomness (0.0 to 1.0)
+- **Temperature**: Adjust response randomness (0.0 to 1.0) (default: 0.7)
 
 ## Development
 
