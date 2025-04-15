@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-ollama",
+  "name": "sidellama",
   "version": "1.0.0",
   "description": "Chat with local ML models using Ollama inside Obsidian",
   "main": "main.js",
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/asmit404/obsidian-ollama.git"
+    "url": "git+https://github.com/asmit404/sidellama.git"
   },
   "keywords": [
     "obsidian",
@@ -22,9 +22,9 @@
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/asmit404/obsidian-ollama/issues"
+    "url": "https://github.com/asmit404/sidellama/issues"
   },
-  "homepage": "https://github.com/asmit404/obsidian-ollama#readme",
+  "homepage": "https://github.com/asmit404/sidellama#readme",
   "devDependencies": {
     "@types/node": "^20.11.5",
     "builtin-modules": "^5.0.0",

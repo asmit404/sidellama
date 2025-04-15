@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, MarkdownView, Notice, Modal, addIcon } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, MarkdownView, Notice, ItemView, addIcon, MarkdownRenderer } from 'obsidian';
 
 interface OllamaPluginSettings {
     modelName: string;
@@ -7,9 +7,9 @@ interface OllamaPluginSettings {
 }
 
 const DEFAULT_SETTINGS: OllamaPluginSettings = {
-    modelName: 'llama2',
+    modelName: 'gemma3',
     apiEndpoint: 'http://localhost:11434',
-    temperature: 0.7
+    temperature: 0.7,
 }
 
 interface OllamaResponse {
@@ -18,73 +18,165 @@ interface OllamaResponse {
     done: boolean;
 }
 
-class OllamaModal extends Modal {
+interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+const VIEW_TYPE_OLLAMA = "sidellama-view";
+
+class OllamaView extends ItemView {
     plugin: OllamaPlugin;
     result: string = '';
     responseDiv: HTMLDivElement;
-    
-    constructor(app: App, plugin: OllamaPlugin) {
-        super(app);
+    abortController: AbortController | null = null;
+    chatHistory: ChatMessage[] = [];
+
+    constructor(leaf: WorkspaceLeaf, plugin: OllamaPlugin) {
+        super(leaf);
         this.plugin = plugin;
     }
 
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.createEl('h2', { text: 'Chat with Ollama' });
+    getViewType(): string {
+        return VIEW_TYPE_OLLAMA;
+    }
 
-        const inputDiv = contentEl.createDiv({ cls: 'ollama-input' });
+    getDisplayText(): string {
+        return "Ollama Chat";
+    }
+
+    getIcon(): string {
+        return "cloud";
+    }
+
+    async onOpen() {
+        const { containerEl } = this;
+        containerEl.empty();
+        containerEl.classList.add('ollama-view');
+
+        const chatContainer = containerEl.createDiv({ cls: 'ollama-chat-container' });
+        
+        const inputDiv = containerEl.createDiv({ cls: 'ollama-input' });
         const textArea = inputDiv.createEl('textarea', {
             attr: { rows: '4', placeholder: 'Type your message here...' }
         });
 
         const buttonDiv = inputDiv.createDiv({ cls: 'ollama-buttons' });
-        const sendButton = buttonDiv.createEl('button', { text: 'Send' });
+        const sendButton = buttonDiv.createEl('button', { text: 'Ask' });
+        const clearButton = buttonDiv.createEl('button', { text: 'Clear Chat' });
+        const addToEditorButton = buttonDiv.createEl('button', { text: 'Add to Editor' });
+        const cancelButton = buttonDiv.createEl('button', { text: '✕', cls: 'cancel-button' });
+        
+        addToEditorButton.disabled = true;
+        cancelButton.style.display = 'none';
 
-        this.responseDiv = contentEl.createDiv({ cls: 'ollama-response' });
+        this.responseDiv = chatContainer;
+
+        clearButton.onclick = () => {
+            this.chatHistory = [];
+            this.responseDiv.empty();
+        };
+
+        cancelButton.onclick = () => {
+            if (this.abortController) {
+                this.abortController.abort();
+                this.abortController = null;
+                cancelButton.style.display = 'none';
+                sendButton.style.display = 'inline-block';
+                new Notice('Generation cancelled');
+            }
+        };
+
+        const renderMessage = (message: ChatMessage) => {
+            const messageDiv = this.responseDiv.createDiv({ cls: `ollama-message ${message.role}` });
+            const roleLabel = messageDiv.createDiv({ cls: 'message-role', text: message.role === 'user' ? 'You' : 'Assistant' });
+            const contentDiv = messageDiv.createDiv({ cls: 'message-content' }) as HTMLElement;
+            MarkdownRenderer.renderMarkdown(message.content, contentDiv, '', this.plugin);
+            this.responseDiv.scrollTo({
+                top: this.responseDiv.scrollHeight,
+                behavior: 'smooth'
+            });
+        };
 
         sendButton.onclick = async () => {
             const prompt = textArea.value;
             if (!prompt) return;
 
-            this.responseDiv.empty();
-            const loadingDiv = this.responseDiv.createDiv({ text: 'Thinking...' });
+            this.chatHistory.push({ role: 'user', content: prompt });
+            renderMessage(this.chatHistory[this.chatHistory.length - 1]);
+            
+            textArea.value = '';
+            addToEditorButton.disabled = true;
+            
+            cancelButton.style.display = 'inline-block';
+            sendButton.style.display = 'none';
             
             try {
-                await this.plugin.streamOllama(prompt, (chunk) => {
-                    if (loadingDiv) loadingDiv.remove();
-                    this.responseDiv.setText(chunk);
-                });
+                this.abortController = new AbortController();
+                let responseContent = '';
+                let contentDiv: HTMLElement | null = null;
+                
+                await this.plugin.streamOllama(
+                    prompt,
+                    (chunk) => {
+                        responseContent = chunk;
+                        if (!contentDiv) {
+                            const messageDiv = this.responseDiv.createDiv({ cls: 'ollama-message assistant' });
+                            messageDiv.createDiv({ cls: 'message-role', text: 'Assistant' });
+                            contentDiv = messageDiv.createDiv({ cls: 'message-content' });
+                        }
+                        
+                        if (contentDiv) {
+                            contentDiv.empty();
+                            MarkdownRenderer.renderMarkdown(responseContent, contentDiv, '', this.plugin);
+                            this.responseDiv.scrollTo({
+                                top: this.responseDiv.scrollHeight,
+                                behavior: 'smooth'
+                            });
+                        }
+                        
+                        this.result = chunk;
+                        addToEditorButton.disabled = false;
+                    },
+                    this.abortController.signal,
+                    this.chatHistory
+                );
+                
+                this.chatHistory.push({ role: 'assistant', content: responseContent });
+                
             } catch (error) {
-                new Notice('Error: ' + error.message);
+                if (error.name === 'AbortError') {
+                    renderMessage({ role: 'assistant', content: '*Generation cancelled*' });
+                } else {
+                    new Notice('Error: ' + error.message);
+                }
+            } finally {
+                cancelButton.style.display = 'none';
+                sendButton.style.display = 'inline-block';
+                this.abortController = null;
             }
         };
 
-        contentEl.addClass('ollama-modal');
-        this.addStyles();
-    }
+        addToEditorButton.onclick = async () => {
+            let targetLeaf = this.app.workspace.getMostRecentLeaf();
+            if (!targetLeaf || !(targetLeaf.view instanceof MarkdownView)) {
+                const markdownLeaves = this.app.workspace.getLeavesOfType('markdown');
+                if (markdownLeaves.length > 0) {
+                    targetLeaf = markdownLeaves[0];
+                } else {
+                    new Notice('Please open a markdown file first');
+                    return;
+                }
+            }
 
-    private addStyles() {
-        const { contentEl } = this;
-        const textareaEl = contentEl.querySelector('.ollama-input textarea') as HTMLTextAreaElement;
-        const buttonsEl = contentEl.querySelector('.ollama-buttons') as HTMLDivElement;
-        const responseEl = contentEl.querySelector('.ollama-response') as HTMLDivElement;
-
-        if (textareaEl) {
-            textareaEl.style.width = '100%';
-            textareaEl.style.marginBottom = '10px';
-        }
-        if (buttonsEl) {
-            buttonsEl.style.textAlign = 'right';
-        }
-        if (responseEl) {
-            responseEl.style.marginTop = '20px';
-            responseEl.style.whiteSpace = 'pre-wrap';
-        }
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
+            if (targetLeaf && targetLeaf.view instanceof MarkdownView && this.result) {
+                await this.app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+                const editor = targetLeaf.view.editor;
+                const cursor = editor.getCursor();
+                editor.replaceRange(this.result, cursor);
+                new Notice('Added response to editor');
+            }
+        };
     }
 }
 
@@ -94,46 +186,57 @@ export default class OllamaPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        addIcon('ollama', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm1-13h-2v6h2V7zm0 8h-2v2h2v-2z"/></svg>');
+        this.registerView(
+            VIEW_TYPE_OLLAMA,
+            (leaf) => new OllamaView(leaf, this)
+        );
         
-        this.addRibbonIcon('ollama', 'Chat with Ollama', () => {
-            new OllamaModal(this.app, this).open();
-        });
-
-        this.addCommand({
-            id: 'ask-ollama',
-            name: 'Ask Ollama (Selection)',
-            editorCallback: async (editor) => {
-                const selection = editor.getSelection();
-                if (!selection) {
-                    new Notice('Please select some text to send to Ollama');
-                    return;
-                }
-
-                try {
-                    let response = '';
-                    await this.streamOllama(selection, (chunk) => {
-                        response = chunk;
-                    });
-                    editor.replaceSelection(response);
-                } catch (error) {
-                    new Notice('Error communicating with Ollama: ' + error.message);
-                }
-            }
+        this.addRibbonIcon('cloud', 'Open Chat', () => {
+            this.activateView();
         });
 
         this.addCommand({
             id: 'open-ollama-chat',
-            name: 'Open Ollama Chat',
+            name: 'Open Chat in Sidebar',
             callback: () => {
-                new OllamaModal(this.app, this).open();
+                this.activateView();
             }
         });
 
         this.addSettingTab(new OllamaSettingTab(this.app, this));
     }
 
-    async streamOllama(prompt: string, onChunk: (chunk: string) => void): Promise<void> {
+    async activateView() {
+        const { workspace } = this.app;
+        
+        let leaf = workspace.getLeavesOfType(VIEW_TYPE_OLLAMA)[0];
+        
+        if (!leaf) {
+            const newLeaf = workspace.getRightLeaf(false);
+            if (newLeaf) {
+                leaf = newLeaf;
+                await leaf.setViewState({
+                    type: VIEW_TYPE_OLLAMA,
+                    active: true,
+                });
+            }
+        }
+        
+        if (leaf) {
+            workspace.revealLeaf(leaf);
+        }
+    }
+
+    async streamOllama(prompt: string, onChunk: (chunk: string) => void, signal?: AbortSignal, chatHistory?: ChatMessage[]): Promise<void> {
+        // Format chat history for the model
+        const formattedHistory = (chatHistory || [])
+            .map(msg => `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`)
+            .join('\n');
+        
+        const contextualPrompt = formattedHistory ? 
+            `${formattedHistory}\nHuman: ${prompt}\nAssistant:` : 
+            `Human: ${prompt}\nAssistant:`;
+
         const response = await fetch(`${this.settings.apiEndpoint}/api/generate`, {
             method: 'POST',
             headers: {
@@ -141,10 +244,11 @@ export default class OllamaPlugin extends Plugin {
             },
             body: JSON.stringify({
                 model: this.settings.modelName,
-                prompt: prompt,
+                prompt: contextualPrompt,
                 temperature: this.settings.temperature,
                 stream: true
             }),
+            signal,
         });
 
         if (!response.ok) {
