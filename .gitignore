@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 *.js.map
+main.js
 
 # IDE and editor files
 .idea/

@@ -73,16 +73,15 @@ var OllamaView = class extends import_obsidian.ItemView {
     const sendButton = buttonDiv.createEl("button", { text: "Ask" });
     const clearButton = buttonDiv.createEl("button", { text: "Clear Chat" });
     const addToEditorButton = buttonDiv.createEl("button", { text: "Add to Editor" });
-    const cancelButton = buttonDiv.createEl("button", { text: "\u2715", cls: "cancel-button" });
+    const cancelButton = buttonDiv.createEl("button", { text: "\u2715", cls: "cancel-button cancel-button-hidden" });
     addToEditorButton.disabled = true;
-    cancelButton.style.display = "none";
     this.responseDiv = chatContainer;
     cancelButton.onclick = () => {
       if (this.abortController) {
         this.abortController.abort();
         this.abortController = null;
-        cancelButton.style.display = "none";
-        sendButton.style.display = "inline-block";
+        cancelButton.classList.replace("cancel-button-visible", "cancel-button-hidden");
+        sendButton.classList.replace("send-button-hidden", "send-button-visible");
         new import_obsidian.Notice("Generation cancelled");
       }
     };
@@ -95,7 +94,7 @@ var OllamaView = class extends import_obsidian.ItemView {
         cls: "message-action-button",
         attr: { "aria-label": "Copy message" }
       });
-      copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+      (0, import_obsidian.setIcon)(copyButton, "copy");
       copyButton.onclick = () => {
         navigator.clipboard.writeText(message.content).then(() => {
           new import_obsidian.Notice("Copied to clipboard");
@@ -108,7 +107,7 @@ var OllamaView = class extends import_obsidian.ItemView {
           cls: "message-action-button",
           attr: { "aria-label": "Delete message" }
         });
-        deleteButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="delete-icon"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2v2"></path></svg>';
+        (0, import_obsidian.setIcon)(deleteButton, "trash");
         deleteButton.onclick = () => {
           this.chatHistory.splice(index, 1);
           this.responseDiv.empty();
@@ -132,8 +131,8 @@ var OllamaView = class extends import_obsidian.ItemView {
       renderMessage(this.chatHistory[this.chatHistory.length - 1], this.chatHistory.length - 1);
       textArea.value = "";
       addToEditorButton.disabled = true;
-      cancelButton.style.display = "inline-block";
-      sendButton.style.display = "none";
+      cancelButton.classList.replace("cancel-button-hidden", "cancel-button-visible");
+      sendButton.classList.replace("send-button-visible", "send-button-hidden");
       try {
         this.abortController = new AbortController();
         let responseContent = "";
@@ -152,7 +151,7 @@ var OllamaView = class extends import_obsidian.ItemView {
                 cls: "message-action-button",
                 attr: { "aria-label": "Copy message" }
               });
-              copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+              (0, import_obsidian.setIcon)(copyButton, "copy");
               copyButton.onclick = () => {
                 navigator.clipboard.writeText(responseContent).then(() => new import_obsidian.Notice("Copied to clipboard")).catch((err) => console.error("Could not copy text:", err));
               };
@@ -186,8 +185,8 @@ var OllamaView = class extends import_obsidian.ItemView {
           new import_obsidian.Notice("Error: " + error.message);
         }
       } finally {
-        cancelButton.style.display = "none";
-        sendButton.style.display = "inline-block";
+        cancelButton.classList.replace("cancel-button-visible", "cancel-button-hidden");
+        sendButton.classList.replace("send-button-hidden", "send-button-visible");
         this.abortController = null;
       }
     };

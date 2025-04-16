@@ -252,3 +252,20 @@
     background-color: var(--background-secondary);
     border-color: var(--background-modifier-border);
 }
+
+/* New styles for send/cancel buttons */
+.cancel-button-hidden {
+    display: none;
+}
+
+.cancel-button-visible {
+    display: inline-block;
+}
+
+.send-button-hidden {
+    display: none;
+}
+
+.send-button-visible {
+    display: inline-block;
+}

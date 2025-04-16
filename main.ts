@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, MarkdownView, Notice, ItemView, addIcon, MarkdownRenderer } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, MarkdownView, Notice, ItemView, addIcon, MarkdownRenderer, setIcon } from 'obsidian';
 
 interface OllamaPluginSettings {
     modelName: string;
@@ -76,19 +76,18 @@ class OllamaView extends ItemView {
         const sendButton = buttonDiv.createEl('button', { text: 'Ask' });
         const clearButton = buttonDiv.createEl('button', { text: 'Clear Chat' });
         const addToEditorButton = buttonDiv.createEl('button', { text: 'Add to Editor' });
-        const cancelButton = buttonDiv.createEl('button', { text: '✕', cls: 'cancel-button' });
+        const cancelButton = buttonDiv.createEl('button', { text: '✕', cls: 'cancel-button cancel-button-hidden' });
         
         addToEditorButton.disabled = true;
-        cancelButton.style.display = 'none';
-
+        
         this.responseDiv = chatContainer;
 
         cancelButton.onclick = () => {
             if (this.abortController) {
                 this.abortController.abort();
                 this.abortController = null;
-                cancelButton.style.display = 'none';
-                sendButton.style.display = 'inline-block';
+                cancelButton.classList.replace('cancel-button-visible', 'cancel-button-hidden');
+                sendButton.classList.replace('send-button-hidden', 'send-button-visible');
                 new Notice('Generation cancelled');
             }
         };
@@ -97,14 +96,12 @@ class OllamaView extends ItemView {
             const messageDiv = this.responseDiv.createDiv({ cls: `ollama-message ${message.role}` });
             const roleLabel = messageDiv.createDiv({ cls: 'message-role', text: message.role === 'user' ? 'You' : 'Assistant' });
             const contentDiv = messageDiv.createDiv({ cls: 'message-content' }) as HTMLElement;
-            
             const actionDiv = messageDiv.createDiv({ cls: 'message-actions' });
-            
             const copyButton = actionDiv.createEl('button', { 
                 cls: 'message-action-button', 
                 attr: { 'aria-label': 'Copy message' }
             });
-            copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+            setIcon(copyButton, 'copy');
             copyButton.onclick = () => {
                 navigator.clipboard.writeText(message.content).then(() => {
                     new Notice('Copied to clipboard');
@@ -118,7 +115,7 @@ class OllamaView extends ItemView {
                     cls: 'message-action-button', 
                     attr: { 'aria-label': 'Delete message' }
                 });
-                deleteButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="delete-icon"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2v2"></path></svg>';
+                setIcon(deleteButton, 'trash');
                 deleteButton.onclick = () => {
                     this.chatHistory.splice(index, 1);
                     this.responseDiv.empty();
@@ -147,8 +144,8 @@ class OllamaView extends ItemView {
             textArea.value = '';
             addToEditorButton.disabled = true;
             
-            cancelButton.style.display = 'inline-block';
-            sendButton.style.display = 'none';
+            cancelButton.classList.replace('cancel-button-hidden', 'cancel-button-visible');
+            sendButton.classList.replace('send-button-visible', 'send-button-hidden');
             
             try {
                 this.abortController = new AbortController();
@@ -165,13 +162,12 @@ class OllamaView extends ItemView {
                             const roleLabel = streamingMessageEl.createDiv({ cls: 'message-role', text: 'Assistant' });
                             contentDiv = streamingMessageEl.createDiv({ cls: 'message-content' });
                             
-                            // Create action div for the streaming message
                             const actionDiv = streamingMessageEl.createDiv({ cls: 'message-actions' });
                             const copyButton = actionDiv.createEl('button', { 
                                 cls: 'message-action-button', 
                                 attr: { 'aria-label': 'Copy message' }
                             });
-                            copyButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1-2-2h9a2 2 0 0 1-2 2v1"></path></svg>';
+                            setIcon(copyButton, 'copy');
                             copyButton.onclick = () => {
                                 navigator.clipboard.writeText(responseContent)
                                     .then(() => new Notice('Copied to clipboard'))
@@ -213,8 +209,8 @@ class OllamaView extends ItemView {
                     new Notice('Error: ' + error.message);
                 }
             } finally {
-                cancelButton.style.display = 'none';
-                sendButton.style.display = 'inline-block';
+                cancelButton.classList.replace('cancel-button-visible', 'cancel-button-hidden');
+                sendButton.classList.replace('send-button-hidden', 'send-button-visible');
                 this.abortController = null;
             }
         };
@@ -296,7 +292,6 @@ export default class OllamaPlugin extends Plugin {
     }
 
     async streamOllama(prompt: string, onChunk: (chunk: string) => void, signal?: AbortSignal, chatHistory?: ChatMessage[]): Promise<void> {
-        // Format chat history for the model
         const formattedHistory = (chatHistory || [])
             .map(msg => `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`)
             .join('\n');
